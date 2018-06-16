@@ -1111,9 +1111,6 @@ class ManagementPanelAutoTag( ManagementPanel ):
 
         for m in media:
 
-            import code
-            code.interact(local=locals())
-
             hash = m.GetHash()
 
             tag_manager = m.GetTagsManager()
