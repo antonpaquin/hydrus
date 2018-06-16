@@ -65,6 +65,7 @@ MANAGEMENT_TYPE_QUERY = 6
 MANAGEMENT_TYPE_IMPORT_URLS = 7
 MANAGEMENT_TYPE_DUPLICATE_FILTER = 8
 MANAGEMENT_TYPE_IMPORT_MULTIPLE_WATCHER = 9
+MANAGEMENT_TYPE_AUTO_TAGGING = 10
 
 management_panel_types_to_classes = {}
 
@@ -84,6 +85,16 @@ def CreateManagementController( page_name, management_type, file_service_key = N
     management_controller.SetVariable( 'media_sort', new_options.GetDefaultSort() )
     
     return management_controller
+
+
+def CreateManagementControllerAutoTag():
+
+    management_controller = CreateManagementController( 'auto tag', MANAGEMENT_TYPE_AUTO_TAGGING )
+
+    management_controller.SetVariable( 'proposed_tags', {} )
+    
+    return management_controller
+
     
 def CreateManagementControllerDuplicateFilter():
     
@@ -907,6 +918,216 @@ class ManagementPanel( wx.lib.scrolledpanel.ScrolledPanel ):
     def REPEATINGPageUpdate( self ):
         
         pass
+
+
+class ManagementPanelAutoTag( ManagementPanel ):
+    
+    def __init__( self, parent, page, controller, management_controller ):
+        
+        ManagementPanel.__init__( self, parent, page, controller, management_controller )
+        
+        menu_items = []
+        
+        page_func = HydrusData.Call( ClientPaths.LaunchPathInWebBrowser, os.path.join( HC.HELP_DIR, 'auto_tagging.html' ) )
+        
+        menu_items.append( ( 'normal', 'show some simpler help here', 'Throw up a message box with some simple help.', self._ShowSimpleHelp ) )
+        menu_items.append( ( 'normal', 'open the html duplicates help', 'Open the help page for automatic tagging in your web browesr.', page_func ) )
+        
+        self._help_button = ClientGUICommon.MenuBitmapButton( self, CC.GlobalBMPs.help, menu_items )
+        
+        self._load_model_panel = ClientGUICommon.StaticBox( self, '1 - load model' )
+
+        self._choose_tagger = wx.DirPickerCtrl( self._load_model_panel, message = "choose tagger", style = wx.DIRP_USE_TEXTCTRL )
+        self._choose_tagger.Bind( wx.EVT_DIRPICKER_CHANGED, self._ChooseTaggerChanged )
+        # Also potentially a spinny loading progress wheel while it calls load()
+        
+        #
+        
+        self._parameter_panel = ClientGUICommon.StaticBox( self, '2 - parameters' )
+
+        self._threshold_slider = wx.Slider( self._parameter_panel, minValue = 0, maxValue = 1000, style = wx.SL_HORIZONTAL )
+        self._threshold_slider.Bind( wx.EVT_SLIDER, self._ThresholdChanged )
+
+        self._threshold_spinctrl = wx.SpinCtrlDouble( self._parameter_panel, min = 0, max = 1, inc=0.01, size = ( 50, -1 ) )
+        self._threshold_spinctrl.Bind( wx.EVT_SPINCTRLDOUBLE, self._ThresholdChanged )
+        
+        self._batch_size_spinctrl = wx.SpinCtrl( self._parameter_panel, min = 1, max = 1000, size = ( 50, -1 ) )
+        self._batch_size_spinctrl.Bind( wx.EVT_SPINCTRL, self._BatchSizeChanged )
+        
+        #
+        
+        self._run_panel = ClientGUICommon.StaticBox( self, '3 - run' )
+        
+        self._run_button = ClientGUICommon.BetterButton( self._run_panel, 'run tagging', self._RunTagging )
+
+        self._run_gauge = wx.Gauge( self._run_panel )
+
+        #
+        
+        self._commit_panel = ClientGUICommon.StaticBox( self, '4 - commit' )
+        
+        self._commit_selected_button = ClientGUICommon.BetterButton( self._commit_panel, 'accept selected', self._CommitSelected)
+        self._commit_all_button = ClientGUICommon.BetterButton( self._commit_panel, 'accept all', self._CommitAll )
+        
+        #
+        
+        new_options = self._controller.new_options
+
+        self._tagger_path = None
+        self._threshold = 0
+        self._batch_size = 1
+
+        # self._choose_tagger.SetPath(self._tagger_path)
+        self._threshold_slider.SetValue(int(self._threshold * 1000))
+        self._threshold_spinctrl.SetValue(self._threshold)
+
+        self._batch_size_spinctrl.SetValue(self._batch_size)
+
+        self._run_gauge.SetValue(0)
+        
+        #
+        
+        self._sort_by.Hide()
+        self._collect_by.Hide()
+        
+        gridbox_1 = wx.FlexGridSizer( 1 )
+
+        gridbox_1.Add( self._choose_tagger, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        self._load_model_panel.Add( gridbox_1, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        #
+        
+        gridbox_2 = wx.FlexGridSizer( 3 )
+        
+        gridbox_2.AddGrowableCol( 1, 1 )
+        
+        gridbox_2.Add( ClientGUICommon.BetterStaticText( self._parameter_panel, label = 'threshold' ), CC.FLAGS_VCENTER )
+        gridbox_2.Add( self._threshold_slider, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        gridbox_2.Add( self._threshold_spinctrl, CC.FLAGS_VCENTER )
+        gridbox_2.Add( ClientGUICommon.BetterStaticText( self._parameter_panel, label = 'batch size' ), CC.FLAGS_VCENTER )
+        gridbox_2.Add( ( 10, 10 ), CC.FLAGS_EXPAND_PERPENDICULAR )
+        gridbox_2.Add( self._batch_size_spinctrl, CC.FLAGS_VCENTER )
+
+        self._parameter_panel.Add( gridbox_2, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+
+        #
+
+        self._run_panel.Add( self._run_button, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        self._run_panel.Add( self._run_gauge, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        #
+
+        hbox_commit = wx.BoxSizer( wx.HORIZONTAL )
+
+        hbox_commit.Add( self._commit_selected_button, CC.FLAGS_VCENTER )
+        hbox_commit.Add( self._commit_all_button, CC.FLAGS_VCENTER )
+
+        self._commit_panel.Add( hbox_commit, CC.FLAGS_EXPAND_PERPENDICULAR )
+
+        #
+        
+        vbox = wx.BoxSizer( wx.VERTICAL )
+        
+        vbox.Add( self._load_model_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.Add( self._parameter_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.Add( self._run_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.Add( self._commit_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        self.SetSizer( vbox )
+
+        # 
+
+        # Here: sub to events?
+        
+    
+    def _ShowSimpleHelp( self ):
+        message = os.linesep.join([
+            'This page will allow a program to automatically assign tags to your files.',
+            '',
+            '',
+            'Before you run it, you\'ll need to download a tagger.',
+            '',
+            'The default illust2vec neural network tagger can be found at <url>',
+            '',
+            'I don\'t know what to write here. I\ll doc it out later. #TODO'
+        ])
+        
+        wx.MessageBox( message )
+
+
+    def _ChooseTaggerChanged( self, evt ):
+        if evt.EventType == wx.wxEVT_DIRPICKER_CHANGED:
+            self._tagger_path = evt.GetPath()
+
+    
+    def _ThresholdChanged( self, evt ):
+        if evt.EventType == wx.wxEVT_SLIDER:
+            self._threshold = (1.0 * evt.GetInt()) / 1000
+
+        elif evt.EventType == wx.wxEVT_SPINCTRLDOUBLE:
+            self._threshold = evt.GetValue()
+
+        if self._threshold_slider.GetValue() != int(self._threshold * 1000):
+            self._threshold_slider.SetValue(int(self._threshold * 1000))
+
+        if self._threshold_spinctrl.GetValue() != self._threshold:
+            self._threshold_spinctrl.SetValue(self._threshold)
+
+
+    def _BatchSizeChanged( self, evt ):
+        if evt.EventType == wx.wxEVT_SPINCTRL:
+            self._batch_size = evt.GetInt()
+
+
+    def _RunTagging( self ):
+        hashes = self._page.GetHashes()
+
+        proposed_tags = self._management_controller.GetVariable('proposed_tags')
+
+        for x in range(0, len(hashes), self._batch_size):
+            hash_batch = hashes[x:min(x + self._batch_size, len(hashes))]
+            # Should this be a Read?
+            tag_batch = self._controller.WriteSynchronous('auto_tag_images', hash_batch, self._tagger_path, self._threshold)
+            proposed_tags.update(tag_batch)
+
+        self._management_controller.SetVariable('proposed_tags', proposed_tags)
+
+
+    def _CommitSelected( self ):
+        with ClientGUIDialogs.DialogYesNo( self, 'Stub!' ) as dlg:
+            pass
+
+
+    def _CommitAll( self ):
+
+        proposed_tags = self._management_controller.GetVariable('proposed_tags')
+
+        service_key = CC.LOCAL_TAG_SERVICE_KEY
+
+        content_updates = {service_key: []}
+
+        media = self._page.GetMedia()
+
+        for m in media:
+
+            import code
+            code.interact(local=locals())
+
+            hash = m.GetHash()
+
+            tag_manager = m.GetTagsManager()
+
+            new_tags = proposed_tags.get(hash, [])
+
+            for tag in new_tags:
+                content_update = HydrusData.ContentUpdate(HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, (tag, {hash}))
+                content_updates[service_key].append(content_update)
+
+        self._controller.Write('content_updates', content_updates)
+
+    
+management_panel_types_to_classes[ MANAGEMENT_TYPE_AUTO_TAGGING ] = ManagementPanelAutoTag
         
     
 class ManagementPanelDuplicateFilter( ManagementPanel ):

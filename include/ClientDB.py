@@ -1,3 +1,4 @@
+import ClientAutoTagging
 import ClientData
 import ClientDefaults
 import ClientGUIShortcuts
@@ -475,8 +476,46 @@ class DB( HydrusDB.HydrusDB ):
         repository_updates_table_name = GenerateRepositoryRepositoryUpdatesTableName( service_id )
         
         self._c.executemany( 'INSERT OR IGNORE INTO ' + repository_updates_table_name + ' ( update_index, hash_id, processed ) VALUES ( ?, ?, ? );', inserts )
-        
+
+
+
+    def _AutoTagImages( self, hashes, tagger_path, threshold ):
+
+        client_files_manager = self._controller.client_files_manager
+
+        tagger = ClientAutoTagging.Tagger(tagger_path)
     
+        tagger.Load()
+
+        hash_ids = self._GetHashIds( hashes )
+
+        numpy_images = []
+
+        hashes_found = []
+
+        for hash, hash_id in zip( hashes, hash_ids ) :
+            try:
+                mime = self._GetMime( hash_id )
+
+                if mime not in HC.IMAGES:
+                    continue
+
+                path = client_files_manager.GetFilePath( hash, mime )
+
+                numpy_image = ClientImageHandling.GenerateNumpyImage( path, mime )
+                numpy_images.append( numpy_image )
+                hashes_found.append( hash )
+
+            except HydrusExceptions.FileMissingException as e:
+                print('Anton: db err: {}'.format(e))
+                continue
+
+        proposed_tags = tagger.TagImages( hashes_found, numpy_images, threshold )
+
+        return proposed_tags
+
+
+        
     def _Backup( self, path ):
         
         client_files_locations = self._GetClientFilesLocations()
@@ -10938,6 +10977,7 @@ class DB( HydrusDB.HydrusDB ):
         
         if action == 'analyze': result = self._AnalyzeStaleBigTables( *args, **kwargs )
         elif action == 'associate_repository_update_hashes': result = self._AssociateRepositoryUpdateHashes( *args, **kwargs )
+        elif action == 'auto_tag_images': result = self._AutoTagImages( *args, **kwargs )
         elif action == 'backup': result = self._Backup( *args, **kwargs )
         elif action == 'clear_orphan_file_records': result = self._ClearOrphanFileRecords( *args, **kwargs )
         elif action == 'content_updates': result = self._ProcessContentUpdates( *args, **kwargs )

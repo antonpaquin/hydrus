@@ -1594,6 +1594,16 @@ class MediaPanel( ClientMedia.ListeningMediaList, wx.ScrolledWindow ):
         if hashes is not None and len( hashes ) > 0:
             
             HG.client_controller.pub( 'new_page_query', self._file_service_key, initial_hashes = hashes )
+
+
+
+    def _ShowSelectionInNewAutoTaggingPage( self ):
+        
+        hashes = self._GetSelectedHashes( ordered = True )
+        
+        if hashes is not None and len( hashes ) > 0:
+            
+            HG.client_controller.pub( 'new_page_auto_tag', initial_hashes = hashes, page_name='auto tag' )
             
         
     
@@ -3575,6 +3585,8 @@ class MediaPanelThumbnails( MediaPanel ):
             ClientGUIMenus.AppendSeparator( menu )
             
             ClientGUIMenus.AppendMenuItem( self, menu, 'open selection in a new page', 'Copy your current selection into a simple new page.', self._ShowSelectionInNewPage )
+
+            ClientGUIMenus.AppendMenuItem( self, menu, 'open selection for automatic tagging', 'Copy your selection into a new page for automatic tagging', self._ShowSelectionInNewAutoTaggingPage )
             
             if advanced_mode:
                 

@@ -119,6 +119,7 @@ class FrameGUI( ClientGUITopLevelWindows.FrameThatResizes ):
         self._controller.sub( self, 'DeleteOldClosedPages', 'delete_old_closed_pages' )
         self._controller.sub( self, 'NewPageImportHDD', 'new_hdd_import' )
         self._controller.sub( self, 'NewPageQuery', 'new_page_query' )
+        self._controller.sub( self, 'NewPageAutoTag', 'new_page_auto_tag' )
         self._controller.sub( self, 'NotifyClosedPage', 'notify_closed_page' )
         self._controller.sub( self, 'NotifyDeletedPage', 'notify_deleted_page' )
         self._controller.sub( self, 'NotifyNewImportFolders', 'notify_new_import_folders' )
@@ -3934,7 +3935,16 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         self._notebook.NewPageQuery( service_key, initial_hashes = initial_hashes, initial_predicates = initial_predicates, page_name = page_name, on_deepest_notebook = True, do_sort = do_sort )
         
+
+    def NewPageAutoTag( self, initial_hashes = None, page_name = None ):
+        
+        if initial_hashes is None:
+            
+            initial_hashes = []
+            
+        self._notebook.NewPageAutoTag( initial_hashes = initial_hashes, on_deepest_notebook = True )
     
+
     def NotifyClosedPage( self, page ):
         
         close_time = HydrusData.GetNow()

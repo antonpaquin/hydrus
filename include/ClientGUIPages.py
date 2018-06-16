@@ -2361,6 +2361,17 @@ class PagesNotebook( wx.Notebook ):
             
         
         return page
+
+
+    def NewPageAutoTag( self, initial_hashes = None, on_deepest_notebook = False ):
+
+        if initial_hashes is None:
+            
+            initial_hashes = []
+        
+        management_controller = ClientGUIManagement.CreateManagementControllerAutoTag()
+
+        return self.NewPage( management_controller, initial_hashes = initial_hashes, on_deepest_notebook = on_deepest_notebook )
         
     
     def NewPageDuplicateFilter( self, on_deepest_notebook = False ):
