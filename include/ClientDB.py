@@ -507,7 +507,7 @@ class DB( HydrusDB.HydrusDB ):
                 hashes_found.append( hash )
 
             except HydrusExceptions.FileMissingException as e:
-                print('Anton: db err: {}'.format(e))
+                print('Auto Tag: db err: {}'.format(e))
                 continue
 
         proposed_tags = tagger.TagImages( hashes_found, numpy_images, threshold )
